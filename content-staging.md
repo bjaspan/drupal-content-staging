@@ -4,14 +4,12 @@
 
 			     BADCAMP 2012
 
-			     Barry Jaspan
-			     Acquia, Inc.
-
 # Architecture
 
 * Content source site
   * Content creation and editing
-  * Pushes to recipients when told to
+  * Pushes to recipients based on configuration
+    * Content type, taxonomy, rules, workflow, ...
 
 * Content sink site
   * Receives new or updated content from source
