@@ -1,0 +1,35 @@
+<?php
+
+/**
+ * @file
+ * Services Raw module provides alternative for saving different Drupal objects
+ * like nodes or users using direct API functiona calls instead of saving / updating
+ * objects with drupal_form_execute function.
+ *
+ * This module can be potential security risk, its intended to be used only for
+ * trusted users.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function services_raw_permission() {
+  return array(
+    'access raw node_save' => array(
+      'title' => t('Access raw node_save function'),
+      'description' => t('Allows to access raw node_save API call via services.')
+    ),
+    'access raw user_save' => array(
+      'title' => t('Access raw user_save function'),
+      'description' => t('Allows to access raw user_save API call via services.')
+    ),
+  );
+}
+
+/**
+ * Implements services_resources().
+ */
+function services_raw_services_resources() {
+  module_load_include('inc', 'services_raw');
+  return _services_raw_services_resources();
+}

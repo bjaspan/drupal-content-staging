@@ -1,0 +1,138 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid module.
+ */
+
+define('UUID_UPGRADE_VAR', 'uuid_upgrade_in_progress');
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function uuid_uninstall() {
+  variable_del('uuid_generator');
+}
+
+/**
+ * Create uuid_vocabulary and uuid_term_data tables.
+ */
+function uuid_update_6001() {
+  $ret = array();
+
+  db_create_table($ret, 'uuid_vocabulary', uuid_table_schema('vocabulary', 'vid'));
+  db_create_table($ret, 'uuid_term_data', uuid_table_schema('term_data', 'tid'));
+
+  return $ret;
+}
+
+/**
+ * For each of out tables, drop the indexe on the UUID column and add a unique
+ * key on that column.
+ */
+function uuid_update_6002() {
+  $ret = array();
+
+  foreach (uuid_schema() as $table => $schema) {
+    db_drop_index($ret, $table, $table . '_uuid_idx');
+    db_add_unique_key($ret, $table, $table . '_uuid_key', array('uuid'));
+  }
+
+  return $ret;
+}
+
+/**
+ * Create uuid_comment table.
+ */
+function uuid_update_6003() {
+  $ret = array();
+
+  db_create_table($ret, 'uuid_comments', uuid_table_schema('comments', 'cid'));
+
+  return $ret;
+}
+
+/**
+ * Fix the column definitions for uuid columns in all tables
+ * to use the more efficient char spec.
+ */
+function uuid_update_6004() {
+  $ret = array();
+
+  // Use what's in uuid_table_schema in order to be consistent.
+  $tables = uuid_schema();
+  $spec = $tables['uuid_node']['fields']['uuid'];
+
+  foreach ($tables as $tablename => $schema) {
+    if (db_table_exists($tablename)) {
+      db_change_field($ret, $tablename, 'uuid', 'uuid', $spec);
+    }
+  }
+
+  return $ret;
+}
+
+/**
+ * Modify existing uuid_node_revisions table to support revision deletion, and
+ * add in as much legacy data as possible.
+ */
+function uuid_update_6005() {
+  $ret = array();
+
+  if (db_table_exists('uuid_node_revisions')) {
+    // Use what's already defined in uuid schema in order to be consistent.
+    $schema = uuid_schema();
+    $spec = $schema['uuid_node_revisions']['fields']['nid'];
+    db_add_field($ret, 'uuid_node_revisions', 'nid', $spec);
+    // Add node ids to the new column, for revisions that exist, but now have a
+    // default value of 0 in uuid_node_revisions.
+    $result = db_query('SELECT nr.nid, nr.vid FROM {node_revisions} AS nr LEFT JOIN {uuid_node_revisions} AS unr ON unr.vid=nr.vid WHERE unr.nid=%d', 0);
+    while ($item = db_fetch_object($result)) {
+      $ret[] = update_sql('UPDATE {uuid_node_revisions} SET nid='. (int) $item->nid .' WHERE vid='. (int) $item->vid);
+    }
+    // Add uuid_node_revision rows for rows that don't exist, but should.
+    $result = db_query('SELECT nr.nid, nr.vid FROM {node_revisions} AS nr LEFT JOIN {uuid_node_revisions} AS unr ON unr.vid=nr.vid WHERE unr.nid IS NULL');
+    while ($item = db_fetch_object($result)) {
+      $ret[] = update_sql(sprintf("INSERT INTO {uuid_node_revisions} (vid, uuid, nid) VALUES(%d, '%s', %d)", $item->vid, uuid_uuid(), $item->nid));
+    }
+    // Delete any orphaned revision vid, uuid pairs.
+    $ret[] = update_sql('DELETE FROM {uuid_node_revisions} WHERE nid=0');
+  }
+
+  return $ret;
+}
+
+/**
+ * Split module into separate submodules. Enable submodules based on settings in Drupal 6.
+ * Move data to new table structures.
+ */
+function uuid_update_7100() {
+  variable_set(UUID_UPGRADE_VAR, TRUE);
+  $upgrade_map = array(
+    'nodes' => 'node',
+    'users' => 'user',
+    'taxonomy' => 'term',
+    'comments' => 'comment',
+  );
+
+  $messages = '';
+  foreach ($upgrade_map as $old_var => $new_module) {
+    $var_name = "uuid_automatic_for_{$old_var}";
+    if (variable_get($var_name, FALSE) === FALSE) {
+      variable_del($var_name);
+      continue;
+    }
+
+    $module = "uuid_{$new_module}";
+    if (module_enable(array($module), TRUE)) {
+      $messages .= t('Enabled @module module.', array('@module' => $module)) . " \n";
+    }
+    else {
+      drupal_set_message('Failed to enable module: @module', array('@module' => $module), 'error');
+    }
+  }
+
+  variable_del(UUID_UPGRADE_VAR);
+
+  return $messages;
+}

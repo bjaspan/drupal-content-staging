@@ -1,0 +1,33 @@
+<?php
+
+/**
+ * Implements hook_taxonomy_term_presave().
+ */
+function uuid_taxonomy_term_presave($term) {
+  if (empty($term->uuid)) {
+    $term->uuid = uuid_uuid();
+  }
+}
+
+/**
+ * Finds a taxonomy term id by its UUID.
+ */
+function uuid_taxonomy_term_find($uuid) {
+  return uuid_find($uuid, 'taxonomy_term_data', 'tid');
+}
+
+/**
+ * Ensures all taxonomy terms have a UUID.
+ */
+function uuid_taxonomy_uuid_sync() {
+  uuid_sync('taxonomy_term_data', 'tid');
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function uuid_taxonomy_views_api() {
+  return array(
+    'api' => 2, 
+  );
+}

@@ -1,0 +1,12 @@
+name = Services Client Custom Conditions
+description = Allow custom conditions to determine which remote connection a node is sent to.
+package = "Services"
+core = 7.x
+dependencies[] = services_client
+
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

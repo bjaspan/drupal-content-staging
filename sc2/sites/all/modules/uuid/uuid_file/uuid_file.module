@@ -1,0 +1,35 @@
+<?php
+
+module_load_include('inc', 'uuid');
+
+/**
+ * Implements hook_file_presave().
+ */
+function uuid_file_file_presave($file) {
+  if (empty($file->uuid)) {
+    $file->uuid = uuid_uuid();
+  }
+}
+
+/**
+ * Searches for a file by its UUID.
+ */
+function uuid_file_find($uuid) {
+  return uuid_find($uuid, 'file_managed', 'fid');
+}
+
+/**
+ * Ensures all files have a UUID.
+ */
+function uuid_file_uuid_sync() {
+  uuid_sync('file_managed', 'fid');
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function uuid_file_views_api() {
+  return array(
+    'api' => 2, 
+  );
+}

@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * @file
+ * Installation file for services_client module.
+ */
+
+/**
+ * Implementation of hook_schema().
+ */
+function services_client_schema() {
+  $schema = array();
+
+  $schema['services_client_connection_hook'] = array(
+    'description' => 'Connection hooks',
+    'fields' => array(
+      'hid' => array(
+        'type'        => 'serial',
+        'description' => 'Primary ID field for the table. Not used for anything except internal lookups.',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+        'no export'   => TRUE,
+      ),
+      'conn_name' => array(
+        'description' => 'The name of the connection.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'name' => array(
+        'description' => 'The name of the hook.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'title' => array(
+        'description' => 'The title of the hook.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'hook' => array(
+        'description' => 'The name of the hook.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'hook_mappings' => array(
+        'description'    => 'Mapping of different fields of objects',
+        'type'           => 'text',
+        'size'           => 'big',
+        'not null'       => TRUE,
+        'serialize'      => TRUE,
+      ),
+      'hook_conditions' => array(
+        'description'    => 'Hook conditions',
+        'type'           => 'text',
+        'size'           => 'big',
+        'not null'       => TRUE,
+        'serialize'      => TRUE,
+      ),
+    ),
+    'primary key' => array('hid'),
+    'unique keys' => array(
+      'name' => array('name')
+    ),
+  );
+
+  $schema['services_client_connection_id'] = array(
+    'description' => 'Holds ids of remote clients',
+    'fields' => array(
+      'name' => array(
+        'description' => 'The name of the connection.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'services_client_id' => array(
+        'description' => 'ID of remote client.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+    ),
+    'primary keys' => array('name'),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function services_client_uninstall() {
+  // Remove all tables on uninstall
+  foreach (array_keys(services_client_schema()) as $table) {
+    db_drop_table($table);
+  }
+}
+
+/**
+ * Remove old {services_client_connection} table which has been moved to
+ * services_client_connection module.
+ */
+function services_client_update_7001() {
+  db_drop_table('services_client_connection');
+}
+
+/**
+ * Add new {services_client_connection_id} which can store remote client id
+ * with each connection.
+ */
+function services_client_update_7002() {
+  $schema['services_client_connection_id'] = array(
+    'description' => 'Holds ids of remote clients',
+    'fields' => array(
+      'name' => array(
+        'description' => 'The name of the connection.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+      'services_client_id' => array(
+        'description' => 'ID of remote client.',
+        'type'        => 'varchar',
+        'length'      => 255,
+        'not null'    => TRUE,
+      ),
+    ),
+    'primary keys' => array('name'),
+  );
+  
+  db_create_table('services_client_connection_id', $schema['services_client_connection_id']);
+}

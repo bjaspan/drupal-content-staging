@@ -1,0 +1,219 @@
+<?php
+
+/**
+ * @file
+ * Provides OAuth authentication plugin for Services Client Connection module.
+ * Allows to connect to remote site via UI and retrieve access token required
+ * for further API access.
+ */
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function services_client_oauth_ctools_plugin_api($owner, $api) {
+  if ($owner == 'services_client_connection' && $api == 'auth') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implementation of hook_services_client_connection_auth().
+ */
+function services_client_oauth_services_client_connection_auth() {
+  $path = drupal_get_path('module', 'services_client_oauth') . '/plugins';
+
+  $info = array();
+
+  $info['ServicesClientConnectionOAuthAuth'] = array(
+    'name' => 'OAuth Authentication',
+    'description' => 'Provides OAuth authentication against services module',
+    'services_version' => 3,
+    'handler' => array(
+      'parent' => 'ServicesClientConnectionAuth',
+      'class' => 'ServicesClientConnectionOAuthAuth',
+      'file' => 'ServicesClientConnectionOAuthAuth.inc',
+      'path' => $path,
+    ),
+  );
+
+  return $info;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function services_client_oauth_menu() {
+  $items = array();
+
+  $items['services_client_oauth/request'] = array(
+    'title' => 'Request access',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_oauth_request'),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK
+  );
+
+  $items['services_client_oauth/access'] = array(
+    'title' => 'Request token callback',
+    'page callback' => 'services_client_oauth_access_callback',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK
+  );
+
+  return $items;
+}
+
+/**
+ * Get access token to resources
+ */
+function services_client_oauth_request() {
+  $form = array();
+
+  $form['consumer_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Consumer Key'),
+    '#required' => TRUE,
+  );
+
+  $form['consumer_secret'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Consumer Secret'),
+    '#required' => TRUE,
+  );
+
+  $form['request_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Request Token URL'),
+    '#default_value' => 'http://domain.com/oauth/request_token',
+    '#required' => TRUE,
+  );
+
+  $form['access_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Access Token URL'),
+    '#default_value' => 'http://domain.com/oauth/access_token',
+    '#required' => TRUE,
+  );
+
+  $form['authorize_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Authorize URL'),
+    '#default_value' => 'http://domain.com/oauth/authorize',
+    '#required' => TRUE,
+  );
+
+  $form['force_port'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Force port'),
+    '#default_value' => '',
+    '#description' => t('For signature calculation you can override remote address port from default.')
+  );
+
+  $form['connection_name'] = array(
+    '#type' => 'value',
+    '#value' => $_GET['connection_name']
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Procceed')
+  );
+
+  return $form;
+}
+
+/**
+ * Validate form and request authorization URL
+ */
+function services_client_oauth_request_validate($form, &$form_state) {
+  try {
+    // Retrieve consumer
+    $key = $form_state['values']['consumer_key'];
+    $secret = $form_state['values']['consumer_secret'];
+    $consumer = new DrupalOAuthConsumer($key, $secret);
+
+    // Get request token
+    $client = new ServicesClientDrupalOAuthClient($consumer);
+    $request_token = $client->getRequestToken($form_state['values']['request_url'], array(
+      'callback' => url('services_client_oauth/access', array('absolute' => TRUE)),
+      'force_port' => !empty($form_state['values']['force_port']) ? $form_state['values']['force_port'] : NULL,
+    ));
+    if (!$request_token) {
+      form_set_error('', t("Error when retrieving request token."));
+      return;
+    }
+
+    // Create auth URL
+    $url = $client->getAuthorizationUrl($form_state['values']['authorize_url'], array(
+      'callback' => url('services_client_oauth/access', array('absolute' => TRUE))
+    ));
+    if (!$url) {
+      form_set_error('', t("Error when retrieving authorization URL."));
+      return;
+    }
+
+    $form_state['oauth'] = array(
+      'url' => $url,
+      'consumer' => $consumer,
+      'request_token' => $request_token
+    );
+  }
+  catch (Exception $e) {
+    form_set_error('', $e->getMessage());
+  }
+}
+
+/**
+ * Redirect user to authorization URL
+ */
+function services_client_oauth_request_submit($form, &$form_state) {
+  $_SESSION['services_client_oauth'] = array(
+    'consumer' => $form_state['oauth']['consumer'],
+    'request_token' => $form_state['oauth']['request_token'],
+    'connection_name' => $form_state['values']['connection_name'],
+    'access_url' => $form_state['values']['access_url'],
+    'force_port' => $form_state['values']['force_port'],
+  );
+  drupal_goto($form_state['oauth']['url']);
+}
+
+/**
+ * Request callback to process and store access token
+ */
+function services_client_oauth_access_callback() {
+  // Get authorized connection name
+  $connection_name = $_SESSION['services_client_oauth']['connection_name'];
+
+  // Retrieve consumer and request token
+  $consumer = $_SESSION['services_client_oauth']['consumer'];
+  $request_token = $_SESSION['services_client_oauth']['request_token'];
+
+  // Validate request and retrieve access token
+  $client = new ServicesClientDrupalOAuthClient($consumer, $request_token);
+  $access_token = $client->getAccessToken($_SESSION['services_client_oauth']['access_url'], array(
+    'verifier' => isset($_GET['oauth_verifier']) ? $_GET['oauth_verifier'] : NULL,
+    'force_port' => !empty($_SESSION['services_client_oauth']['force_port']) ? $_SESSION['services_client_oauth']['force_port'] : NULL,
+  ));
+  if (!$access_token) {
+    drupal_set_message(t('Getting access token failed.'), 'error');
+    drupal_goto('admin/structure/services_client/connection/list/' . $connection_name .'/auth');
+  }
+
+  // Update services client connection
+  $connection = services_client_connection_load($connection_name);
+  $connection->config['auth']['config'] = array(
+    'consumer_key' => $consumer->key,
+    'consumer_secret' => $consumer->secret,
+    'access_key' => $access_token->key,
+    'access_secret' => $access_token->secret,
+    'force_port' => !empty($_SESSION['services_client_oauth']['force_port']) ? $_SESSION['services_client_oauth']['force_port'] : NULL,
+  );
+  services_client_connection_save($connection);
+
+  // Remove old data
+  unset($_SESSION['services_client_oauth']);
+
+  drupal_set_message('Connection has been saved.');
+  drupal_goto('admin/structure/services_client/connection/list/' . $connection_name .'/auth');
+}
+

@@ -1,0 +1,81 @@
+<?php
+
+/**
+ * @file
+ * Main module functions for the uuid module.
+ */
+
+// Include the generic functions we need
+module_load_include('inc', 'uuid', 'uuid');
+
+// Generic Hooks
+
+/**
+ * Implements of hook_menu().
+ */
+function uuid_menu() {
+  $items = array();
+
+  $items['admin/config/system/uuid'] = array(
+    'title' => 'Universally Unique IDentifier',
+    'description' => 'Configure automatically UUID generation settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('uuid_admin'),
+    'access arguments' => array('administer uuid'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'uuid.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements of hook_permission().
+ */
+function uuid_permission() {
+  return array(
+    'administer uuid' => array(
+      'title' => t('Administer UUID'),
+      'description' => t('Allows configuration of the UUID module and APIs.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_token_info().
+ */
+function uuid_token_info() {
+  $type = array(
+    'name' => t('uuid'), 
+    'description' => t('Tokens related to UUID.'), 
+    'needs-data' => NULL,
+  );
+
+  $tokens['uuid'] = array(
+    'name' => t("UUID"), 
+    'description' => t("The Universally Unique IDentifier."),
+  );
+
+  return array(
+    'types' => array('uuid' => $type), 
+    'tokens' => array('uuid' => $tokens),
+  );
+}
+
+/**
+ * Implements hook_tokens().
+ */
+function uuid_tokens($type, $tokens, $data = array(), $options = array()) {
+  $replacements = array();
+  if ('uuid' != $type) {
+    return $replacements;
+  }
+
+  foreach ($tokens as $name => $original) {
+    if ('uuid' == $name) {
+      $replacements[$original] = uuid_uuid();
+      return $replacements;
+    }
+  }
+  return $replacements;
+}

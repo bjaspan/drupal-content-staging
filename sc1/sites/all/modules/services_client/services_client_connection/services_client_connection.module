@@ -1,0 +1,228 @@
+<?php
+
+/**
+ * @file
+ * Services Client Connection allows to configure different connections via
+ * UI and store them as exportable configuration. API client should be able to
+ * communicate with different versions of remote Services module via unified
+ * API client.
+ */
+
+/**
+ * Implementation of hook_permissions().
+ */
+function services_client_connection_permission() {
+  return array(
+    'administer services client connection' => array(
+      'title' => t('Administer services connections'),
+      'description' => t('Configure connections to remote Drupal sites.'),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_ctools_plugin_directory().
+ */
+function services_client_connection_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' && $plugin == 'export_ui') {
+    return 'plugins/' . $plugin;
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function services_client_connection_ctools_plugin_api($owner, $api) {
+  if ($owner == 'services_client_connection' && in_array($api, array('auth', 'server', 'request'))) {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_type().
+ */
+function services_client_connection_ctools_plugin_type() {
+  return array(
+    'auth' => array(
+      'cache' => FALSE,
+      'use hooks' => TRUE,
+      'classes' => array('handler'),
+    ),
+    'server' => array(
+      'cache' => FALSE,
+      'use hooks' => TRUE,
+      'classes' => array('handler'),
+    ),
+    'request' => array(
+      'cache' => FALSE,
+      'use hooks' => TRUE,
+      'classes' => array('handler'),
+    ),
+  );
+}
+
+/**
+ * Get list of all plugins
+ *
+ * @param string $type
+ *   Type of required plugins
+ * @param int $services_version
+ *   Optionally can provide version of services module that have to be supported
+ *   by plugin
+ * @param bool $select_box
+ *   Whether should be returned back as options for select box in format
+ *   PluginName => Human Readable
+ */
+function services_client_connection_get_plugins($type, $services_version = NULL, $select_box = FALSE) {
+  $output = array();
+
+  $plugins = ctools_get_plugins('services_client_connection', $type);
+
+  // Let other modules alter list of plugins
+  drupal_alter('services_client_connection_plugins', $plugins, $type);
+
+  // Filter plugins by remote services version
+  if ($services_version) {
+    foreach ($plugins as $key => $plugin) {
+      if (isset($plugin['services_version'])) {
+        if (is_array($plugin['services_version']) && in_array($services_version, $plugin['services_version'])) {
+          $output[$key] = $plugin;
+        }
+        elseif ($plugin['services_version'] == $services_version) {
+          $output[$key] = $plugin;
+        }
+      }
+      else {
+        $output[$key] = $plugin;
+      }
+    }
+  }
+  else {
+    $output = $plugins;
+  }
+
+  if ($select_box) {
+    $options = array();
+    foreach ($output as $key => $plugin) {
+      $options[$key] = $plugin['name'];
+    }
+    $output = $options;
+  }
+
+  return $output;
+}
+
+/**
+ * Create new plugin instance
+ *
+ * @param $name
+ * @param $connection
+ * @param $config
+ * @param $client
+ * @return ServicesClientConnectionPlugin
+ */
+function services_client_connection_get_plugin($type, $name, $connection, $config, $client = NULL) {
+  $class = ctools_plugin_load_class('services_client_connection', $type, $name, 'handler');
+
+  if ($class) {
+    return new $class($connection, $config, $client);
+  }
+  else {
+    throw new ServicesClientConnectionException(t('Missing class @name', array('@name' => $name)));
+  }
+}
+
+/**
+ * Implementation of hook_services_client_connection_auth().
+ */
+function services_client_connection_services_client_connection_auth() {
+  module_load_include('inc', 'services_client_connection', 'include/plugin_definition');
+  return _services_client_connection_auth();
+}
+
+/**
+ * Implementation of hook_services_client_connection_server().
+ */
+function services_client_connection_services_client_connection_server() {
+  module_load_include('inc', 'services_client_connection', 'include/plugin_definition');
+  return _services_client_connection_server();
+}
+
+/**
+ * Implementation of hook_services_client_connection_server().
+ */
+function services_client_connection_services_client_connection_request() {
+  module_load_include('inc', 'services_client_connection', 'include/plugin_definition');
+  return _services_client_connection_request();
+}
+
+/**
+ * Create new connection client
+ *
+ * @param $name
+ */
+function services_client_connection_get($name) {
+  $connection = services_client_connection_load($name);
+  if (!$connection) {
+    throw new Exception(t('Specified connection is not existing.'));
+  }
+  $client = new ServicesClientConnection($connection);
+  return $client;
+}
+
+/**
+ * Load connection configuration
+ *
+ * @param $name
+ *   Name of the connection
+ */
+function services_client_connection_load($name) {
+  ctools_include('export');
+  $result = ctools_export_load_object('services_client_connection', 'names', array($name));
+  if (isset($result[$name]) && ($connection = $result[$name])) {
+    services_client_connection_invoke($connection, 'load');
+    return $connection;
+  }
+  return NULL;
+}
+
+/**
+ * Load all available connection definitions
+ */
+function services_client_connection_load_all() {
+  ctools_include('export');
+  return ctools_export_crud_load_all('services_client_connection');
+}
+
+/**
+ * Save services client connection configuration
+ *
+ * @param $connection
+ *   Connnection configruation object
+ */
+function services_client_connection_save($connection) {
+  ctools_include('export');
+  $update = (isset($connection->cid) && is_numeric($connection->cid)) ? array('cid') : array();
+  $result = drupal_write_record('services_client_connection', $connection, $update);
+  services_client_connection_invoke($connection, 'save');
+  return $result;
+}
+
+/**
+ * Invoke a node hook.
+ *
+ * @param $node
+ *   A node object or a string containing the node type.
+ * @param $hook
+ *   A string containing the name of the hook.
+ * @param $a2, $a3, $a4
+ *   Arguments to pass on to the hook, after the $node argument.
+ * @return
+ *   The returned value of the invoked hook.
+ */
+function services_client_connection_invoke($connection, $hook) {
+  foreach (module_implements('services_client_connection_' . $hook) as $module) {
+    $function = $module . '_services_client_connection_' . $hook;
+    $function($connection);
+  }
+}

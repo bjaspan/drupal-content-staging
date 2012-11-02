@@ -1,0 +1,1191 @@
+<?php
+
+/**
+ * @file
+ * 
+ * Services client module allows to push different types of objects on
+ * different types of events such as node_save, user_save to remote
+ * masters.
+ */
+
+/**
+ * Delimiters definition
+ */
+define('SERVICES_CLIENT_DELMITER_ARRAY', '#>');
+define('SERVICES_CLIENT_DELMITER_OBJECT', '#');
+
+/**
+ * Implementation of hook_menu().
+ */
+function services_client_menu() {
+  $items['admin/structure/services_client'] = array(
+    'title' => 'Services Client',
+    'description' => 'View all services connections to master services servers',
+    'page callback' => 'services_client_admin_list',
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['admin/structure/services_client/list'] = array(
+    'title' => 'List',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+
+  $items['admin/structure/services_client/settings'] = array(
+    'title' => 'Settings',
+    'description' => 'Configure general client settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_settings'),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['admin/structure/services_client/hook-add/%services_client_connection'] = array(
+    'title' => 'Add Hook',
+    'description' => 'Add a hook to a client connection',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_hooks_form', 4),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/structure/services_client/hook-edit/%services_client_connection/%services_client_hook'] = array(
+    'title' => 'Edit Hook',
+    'description' => 'Edit an existing hook for a client connection',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_hooks_form', 4, 5),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/structure/services_client/hook-delete/%services_client_connection/%services_client_hook'] = array(
+    'title' => 'Delete Hook',
+    'description' => 'Delete an existing hook for a client connection',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_hooks_delete', 4, 5),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/structure/services_client/hook-condition/%services_client_connection/%services_client_hook'] = array(
+    'title' => 'Hook Conditons',
+    'description' => 'Set a condition for this hook to execute on.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_hooks_condition_form', 4, 5),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/structure/services_client/hook-mapping/%services_client_connection/%services_client_hook'] = array(
+    'title' => 'Hook Mapping',
+    'description' => 'Define how this hook maps to the master services server.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('services_client_hooks_mapping_form', 4, 5),
+    'access arguments' => array('administer services client'),
+    'file' => 'services_client.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function services_client_theme() {
+  return array(
+    'services_client_admin_list' => array(
+      'render element' => 'element',
+      'file' => 'services_client.theme.inc',
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_cron_queue_info().
+ */
+function services_client_cron_queue_info() {
+  if (variable_get('services_client_use_queue', FALSE) && variable_get('services_client_process_queue_cron', FALSE)) {
+    $queues['services_client_sync'] = array(
+      'worker callback' => 'services_client_queue_sync',
+      'time' => 120
+    );
+    return $queues;
+  }
+  else {
+    return array();
+  }
+}
+
+/**
+ * Implementation of hook_permission
+ *
+ * @return array
+ */
+function services_client_permission() {
+  return array( 
+    'administer services client' => array(
+      'title' => t('Administer the services client'),
+      'description' => t('Manage services client connections, hooks and mappings'),
+    ),
+    'make services client requests' => array(
+      'title' => t('Perform services client requests'),
+      'description' => t('Grant permission to actually execute the services hooks'),
+    ),
+  );
+}
+
+/**
+ * Returns TRUE if hook_name alredy exists for specific connection.
+ *
+ * @return bool
+ */
+function services_client_services_connection_hook_exists($name, $element) {
+  $conn_name = $element['#machine_name']['conn_name'];
+  $query = 'SELECT 1 FROM {services_client_connection_hook} WHERE conn_name = :conn_name AND name = :name';
+  $result = db_query_range($query, 0, 1, array(
+      'conn_name' => $conn_name,
+      'name' => $name
+    ))->fetchField();
+  return $result;
+}
+
+/**
+ * This function will return a data for a single connection hook, or if the
+ * 'num' param is set to 'all', it will return an object containing all matches
+ *
+ * @param array $params
+ *   Params are:
+ *     hid: a hook id (will always return 1 result)
+ *     name: a hook name (will always return 1 result)
+ *     conn_name: a connection name (can return many results)
+ *     num: Number of results to return. Options are all or 1.
+ * @return array|object
+ */
+function services_client_get_client_hooks_list($params = array()) {
+  $ret = array();
+  if (!empty($params['hid']) && is_numeric($params['hid'])) {
+    $ret = db_query("SELECT * FROM {services_client_connection_hook} WHERE hid = ?", array($params['hid']));
+  } else
+  if (!empty($params['name']) && $params['name']) {
+    $ret = db_query("SELECT * FROM {services_client_connection_hook} WHERE name = ?", array($params['name']));
+  } else
+  if (!empty($params['conn_name']) && $params['conn_name']) {
+    $ret = db_query("SELECT * FROM {services_client_connection_hook} WHERE conn_name = ?", array($params['conn_name']));
+  } else {
+    $ret = db_query("SELECT * FROM {services_client_connection_hook} WHERE 1");
+  }
+  if (!empty($ret)) {
+    if (!empty($params['num']) && $params['num'] == 'all') {
+      return $ret->fetchAll();
+    } else {
+      return $ret->fetchAssoc();
+    }
+  } else {
+    return FALSE;
+  }
+}
+
+/**
+ * Load hook object by ID
+ *
+ * @param $hid
+ *   Hook id
+ */
+function services_client_hook_load($hid) {
+  return services_client_get_client_hooks_list(array('hid' => $hid));
+}
+
+/**
+ * Implements of hook_node_insert().
+ */
+function services_client_node_insert($node) {
+  if (module_exists('reference_uuid')) {
+    reference_uuid_entity_load(array($node), 'node');
+  }
+  services_client_data_process($node, 'node_save');
+}
+
+/**
+ * Implements of hook_node_update().
+ */
+function services_client_node_update($node) {
+  if (module_exists('reference_uuid')) {
+    reference_uuid_entity_load(array($node), 'node');
+  }
+  services_client_data_process($node, 'node_save');
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function services_client_node_delete($node) {
+  // Ensure queueing deletion of node
+  $node->_services_client = array(
+    'origin' => $_SERVER['SERVER_NAME'],
+  );
+  services_client_data_process($node, 'node_delete');
+}
+
+/**
+ * Implements of hook_user_insert().
+ */
+function services_client_user_insert(&$edit, $account, $category) {
+  if (!empty($edit['_services_client_skip'])) {
+    unset($edit['_services_client_skip']);
+    return;
+  }
+
+  if (isset($edit['_services_client'])) {
+    $account->_services_client = $edit['_services_client'];
+  }
+  
+  services_client_data_process($account, 'user_save');
+}
+
+/**
+ * Implements hook_user_update().
+ */
+function services_client_user_update(&$edit, $account, $category) {
+  if (!empty($edit['_services_client_skip'])) {
+    unset($edit['_services_client_skip']);
+    return;
+  }
+
+  if (isset($edit['_services_client'])) {
+    $account->_services_client = $edit['_services_client'];
+  }
+
+  services_client_data_process($account, 'user_save');
+}
+
+/**
+ * Implements hook_webform_submission_insert().
+ */
+function services_client_webform_submission_insert($node, $submission) {
+  services_client_data_process($submission, 'webform_submission_save');
+}
+
+/**
+ * This function takes inbound data objects and a type and determines if there
+ * are tasks for them. If there are, it checks conditions and then generates
+ * connections and organizes the data to pass to the calling functions
+ *
+ * @param object $src_data
+ *    This is the source data object. Typically a $node or $user object
+ * @param string $type
+ *    This is an identifier for the $src_data object. Options are:
+ *    node_save, user_save
+ * @param string $name
+ *   Optionally fire only specific hook.
+ */
+function services_client_data_process($src_data, $type, $name = NULL, $conns_to_send = NULL, $bypass_conditions = FALSE) {
+
+  // If sync is not forced and some module is not allowing to sync data
+  // return from function
+  if (services_client_sync_exclude($src_data, services_client_get_data_type($type))) {
+    return TRUE;
+  }
+
+  // Module can process data in queue if data are comming from remote site. To
+  // determine remote data use _services_client property which is added by services_client
+  // module on remote origin site.
+  if (services_client_queue_data($src_data, $type)) {
+    return;
+  }
+
+  // If origin of data is current site and data are going to be sent to remote
+  // recipients add _services_client property to tell remote site that data
+  // are synced by services_client module.
+  $src_data->_services_client = isset($src_data->_services_client) ? $src_data->_services_client : array();
+  $src_data->_services_client['origin'] = services_client_get_id();
+  $src_data->_services_client['visted'] = isset($src_data->_services_client['visted']) ? $src_data->_services_client['visted'] : array();
+  // Don't send 'queued' control key to remote site, let it handle queueing by themselves
+  unset($src_data->_services_client['queued']);
+
+  if (!in_array(services_client_get_id(), $src_data->_services_client['visted'])) {
+    $src_data->_services_client['visted'][] = services_client_get_id();
+  }
+  else {
+    watchdog('sc', "Possible loop in system. Type: @type, data: <pre>@data</pre>", array(
+      '@type' => $type,
+      '@data' => print_r($src_data, TRUE),
+    ));
+    return FALSE;
+  }
+
+  // Declare some of the arrays we'll be using.
+  $tasks = array();
+  $conns = array();
+
+  // API call can limit firing only specific hook
+  if (!empty($name)) {
+    $hooks = db_select('services_client_connection_hook','c')
+      ->fields('c')
+      ->condition('name', $name)
+      ->execute()
+      ->fetchAll();
+  }
+  else if (!empty($conns_to_send)) {
+    $hooks = db_select('services_client_connection_hook','c')
+      ->fields('c')
+      ->condition('conn_name', $conns_to_send, 'IN')
+      ->execute()
+      ->fetchAll();
+  }
+  else {
+    // Get any hooks that are for action $type
+    $hooks = db_select('services_client_connection_hook','c')
+      ->fields('c')
+      ->condition('hook', $type)
+      ->execute()
+      ->fetchAll();
+  }
+  
+  foreach ($hooks as $hook) {
+
+    $conds = unserialize($hook->hook_conditions);
+
+    // If the type is node_save, and there are conditions...
+    if (!$bypass_conditions && in_array($type, array('node_save', 'node_delete')) && count($conds) > 0) {
+      if ($conds['published'] != 'e' && $conds['published'] != $src_data->status) {
+        continue;
+      }
+      if ($conds['node_type'] != $src_data->type) {
+        continue;
+      }
+    }
+
+    // Check if connection has been already visited
+    $connection = services_client_connection_load($hook->conn_name);
+    if (isset($connection->services_client_id) && in_array($connection->services_client_id, $src_data->_services_client['visted'])) {
+      watchdog('sc', 'Loop prevention. Not sending type: @type to connection @conn. data: <pre>@data</pre>', array(
+        '@type' => $type,
+        '@data' => print_r($src_data, TRUE),
+        '@conn' => $connection->name,
+      ));
+      continue;
+    }
+
+    // Generate the tasks and conns
+    $tasks[$hook->conn_name][] = $hook;
+  }
+
+  // Allow other modules to introduce own variables
+  $data_type = services_client_get_data_type($type);
+  drupal_alter('services_client_data', $src_data, $data_type);
+
+  // Store results in array
+  $result = array(
+    'success' => array(),
+    'errors' => array(),
+  );
+
+  if (count($tasks) > 0) {
+    foreach ($tasks as $hook_conn) {
+      foreach ($hook_conn as $task) {
+        switch ($type) {
+          case 'node_save':
+            $call_res = services_client_make_node_call($src_data, $task);
+            break;
+          case 'node_delete':
+            $call_res = services_client_make_node_delete_call($src_data, $task);
+            break;
+          case 'user_save':
+            $call_res = services_client_make_user_call($src_data, $task);
+            break;
+          case 'webform_submission_save':
+            $conds = unserialize($hook->hook_conditions);
+            if($src_data->nid == $conds['webform_nid']){
+              $call_res = services_client_make_submission_to_node_call($src_data, $task);
+            }
+            break;
+        }
+
+        // Save operation result
+        $row = array(
+          'data' => $src_data,
+          'type' => services_client_get_data_type($type),
+          'task' => $task,
+        );
+        $result_type = ($call_res ? 'success' : 'errors');
+        $result[$result_type][] = $row;
+      }
+    }
+  }
+
+  if (count($result['errors'])) {
+    services_client_process_errors($result['errors']);
+  }
+
+  return $result;
+}
+
+/**
+ * Get data type by passed to services client by event type
+ *
+ * @param $event
+ *   String representing event type
+ * @return
+ *   Object type string
+ */
+function services_client_get_data_type($event) {
+  static $types = array(
+    'node_save' => 'node',
+    'user_save' => 'user',
+  );
+
+  return isset($types[$event]) ? $types[$event] : NULL;
+}
+
+/**
+ * Make the actual user create/update call for each connection and task
+ *
+ * @param object $user
+ *    This is the user object which was just saved
+ * @param object $task
+ *    Contains the field mappings and other data
+ * @param object $conn
+ *    This contains the connection data to reach the services server
+ * @return boolean
+ *    TRUE or FALSE for whether or not the request was successful
+ */
+function services_client_make_user_call($user, $task) {
+  try {
+    // Exclude users that shouldn't be synced
+    if (services_client_user_exclude($user)) {
+      return TRUE;
+    }
+    
+    // Generate our connection object. If false, then we failed login.
+    $client = services_client_connection_get($task->conn_name);
+
+    // Generate the user object
+    $user_data = new stdClass;
+
+    // Load up the mapping
+    $mapping = unserialize($task->hook_mappings);
+    $fields = explode("\n", $mapping['field_mapping']);
+    $fields_empty = services_client_process_mapping_prepare_empty(isset($mapping['field_mapping_empty']) ? $mapping['field_mapping_empty'] : array());
+
+    // Process the field mapping and assign to the data object we are passing to services server
+    $user_data = services_client_process_mapping($user, $fields, $fields_empty);
+
+    // If UUID is available
+    if (!empty($user->uuid)) {
+      $user_data->uuid = $user->uuid;
+    }
+
+    if (isset($user->_services_client)) {
+      $user_data->_services_client = $user->_services_client;
+    }
+
+    // Add roles to user data
+    services_client_process_roles_mapping($user, $user_data, $mapping['user_sync_roles'], $client, $task->conn_name);
+
+    // Because different calls and versions of the services module use both data
+    // or account depending on various conditions, we apply the data to both.
+    $data = (array) $user_data;
+
+    // TODO DEBUGGING REMOVE ME
+    watchdog('sc_user', 'Sending user to %conn: <pre>@user</pre>', array(
+      '%conn' => $task->conn_name,
+      '@user' => print_r($data, TRUE),
+    ));
+
+    // Find out if there is already an object on the master server with this UUID
+    $remote_name = isset($user->original->name) ? $user->original->name : $user->name;
+    if (variable_get('services_client_user_sync_byname', TRUE) && $remote_name) {
+      $result = $client->index('user', 'uid,name', array('name' => $remote_name));
+      if (!empty($result)) {
+        $uid = $result[0]['uid'];
+      }
+    }
+    else {
+      $uid = $client->get('uuid', 'user', array('uuid' => $user->uuid));
+    }
+
+    // We have a result. We need to update the node
+    if (!empty($uid)) {
+      watchdog('sc_user', 'Got @uid for uuid @uuid', array(
+        '@uid' => $uid,
+        '@uuid' => $user->uuid,
+      ));
+
+      // Update the user on the services master
+      $client->update('user_raw', $uid, $data);
+    }
+    // No result on our UUID search. Create a node.
+    else {
+      // Create the user on the services master
+      $client->create('user_raw', $data);
+    }
+  }
+  catch (ServicesClientConnectionResponseException $e) {
+    $e->log();
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
+ * Make the actual node create/update call for each connection and task
+ *
+ * @param object $node
+ *    This is the node object which was just saved
+ * @param object $task
+ *    Contains the field mappings and other data
+ * @return boolean
+ *    TRUE or FALSE for whether or not the request was successful
+ */
+function services_client_make_node_call($node, $task) {
+  try {
+    // Generate our connection object. If false, then we failed login.
+    $client = services_client_connection_get($task->conn_name);
+
+    // Lets load up that mapping and do our thing
+    $mapping = unserialize($task->hook_mappings);
+    $fields = explode("\n", $mapping['field_mapping']);
+    $fields_empty = services_client_process_mapping_prepare_empty(isset($mapping['field_mapping_empty']) ? $mapping['field_mapping_empty'] : array());
+    $types = explode("\n", $mapping['node_type_mapping']);
+
+    // Process the field mapping and assign to the data object we are passing to services server
+    $node_data = services_client_process_mapping($node, $fields, $fields_empty);
+
+    // Override field mapping of types to allow substitution/transformation
+    if (count($types) > 0) {
+      $node_data->type = services_client_type_override($types, $node->type);
+    }
+
+    // UUID is always passed and is deliberately overridden
+    $node_data->uuid = $node->uuid;
+
+    // Get remote UID
+    $account = user_load($node->uid);
+    $uid = $client->get('uuid', 'user', array('uuid' => $account->uuid));
+    if (is_numeric($uid) && !empty($uid)) {
+      $node_data->uid = $uid;
+    }
+
+    if (isset($node->_services_client)) {
+      $node_data->_services_client = $node->_services_client;
+    }
+
+    // Node data needs to be an array containing an object.
+    $data = (array) $node_data;
+
+    // TODO DEBUGGING REMOVE ME
+    watchdog('sc_node', 'Sending node to %conn: <pre>@node</pre>', array(
+      '%conn' => $task->conn_name,
+      '@node' => print_r($data, TRUE)
+    ));
+
+    // Find out if there is already an object on the master server with this UUID
+    $nid = $client->get('uuid', 'node', array('uuid' => $node->uuid));
+
+    // We have a result. We need to update the node
+    if (is_numeric($nid) && !empty($nid)) {
+      watchdog('sc_node', 'Got @nid for uuid @uuid', array(
+        '@nid' => $nid,
+        '@uuid' => $node->uuid
+      ));
+
+      // Update the node on the services master
+      $client->update('node_raw', $nid, $data);
+    }
+    // No result on our UUID search. Create a node.
+    else {
+      // Create the node on the services master
+      $client->create('node_raw', $data);
+    }
+  }
+  catch (ServicesClientConnectionResponseException $e) {
+    $e->log();
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
+ * Delete node on remote site.
+ */
+function services_client_make_node_delete_call($node, $task) {
+  try {
+    // Generate our connection object. If false, then we failed login.
+    $client = services_client_connection_get($task->conn_name);
+
+    watchdog('sc_node', 'Deleting node @title - @nid from %conn', array(
+      '%conn' => $task->conn_name,
+      '@title' => $node->title,
+      '@nid' => $node->nid
+    ));
+
+    // Find out if there is already an object on the master server with this UUID
+    $nid = $client->get('uuid', 'node', array('uuid' => $node->uuid));
+
+    if ($nid) {
+      // Delete remote node
+      $client->delete('node', $nid);
+
+      watchdog('sc_node', 'Node @nid was deleted from remote site @name', array(
+        '@nid' => $node->nid,
+        '@name' => $task->conn_name,
+      ));
+    }
+    else {
+      watchdog('sc_node', 'Node @nid was not found on remote site @name', array(
+        '@nid' => $node->nid,
+        '@name' => $task->conn_name,
+      ));
+    }
+  }
+  catch (ServicesClientConnectionResponseException $e) {
+    $e->log();
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
+ * Make the actual node create/update call for each connection and task
+ *
+ * @param object $node
+ *    This is the node object which was just saved.
+ * @param object $task
+ *    Contains the field mappings and other data
+ * @return boolean
+ *    TRUE or FALSE for whether or not the request was successful
+ */
+function services_client_make_submission_to_node_call($submission, $task) {
+  try {
+    // Generate our connection object. If false, then we failed login.
+    $client = services_client_connection_get($task->conn_name);
+    // Lets load up that mapping and do our thing
+    $mapping = unserialize($task->hook_mappings);
+    $fields = explode("\n", $mapping['field_mapping']);
+    $types = explode("\n", $mapping['node_type_mapping']);
+    $fields_empty = services_client_process_mapping_prepare_empty(isset($mapping['field_mapping_empty']) ? $mapping['field_mapping_empty'] : '');
+    //Get the field name on master nodes - what field to update with attached files
+    $file_field_name = $mapping['file_field_name'];
+
+    // Process the field mapping and assign to the data object we are passing to services server
+    $submission_data = services_client_process_mapping($submission, $fields, $fields_empty);
+    // Override field mapping of types to allow substitution/transformation
+    if (count($types) > 0) {
+      $submission_data->type = services_client_type_override($types, 'webform');
+    }
+    // set revision and language, just in case.
+    $submission_data->revision = '';
+    $submission_data->language = LANGUAGE_NONE;
+
+    if (isset($submission->_services_client)) {
+      $submission_data->_services_client = $submission->_services_client;
+    }
+
+    // Node data needs to be an array containing an object.
+    $data = (array) $submission_data;
+
+    // TODO DEBUGGING REMOVE ME
+    watchdog('sc_node', 'Sending node to %conn: <pre>@node</pre>', array(
+      '%conn' => $task->conn_name,
+      '@node' => print_r($data, TRUE)
+    ));
+
+    // Create the node on the services master
+    $response = $client->create('node_raw', $data);
+    $response_nid = $response['nid'];
+
+    // Check if there some files to be uploaded
+    if (count($submission->file_usage['added_fids'])) {
+      // Hardcoded for now
+      $file = file_load($submission->file_usage['added_fids'][0]);
+      $file_data = array(
+        'file' => base64_encode(file_get_contents($file->uri)),
+        'filename' => $file->filename,
+      );
+      // Send file to remote endpoint and get fid
+      $response = $client->create('file', $file_data);
+
+      // Attach new created file to node
+      $data = array('field_name' => $file_field_name, 'fid' => $response['fid']);
+      $client->targetAction('node_raw', $response_nid, 'attach_file', $data);
+    }
+  }
+  catch (ServicesClientConnectionResponseException $e) {
+    $e->log();
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+/**
+ * Process the mapping lists for fields
+ *
+ * @param object $src_data
+ *    This is the source data object. It is typically a $node or $user object
+ * @param array $fields
+ *    This is the list of field mappings that were entered by the user
+ * @param array $fields_empty
+ *    List of empty fields mapping
+ * @return stdClass
+ *    This is a resultant object with mapped elements that we will be sending
+ *    to the destination services server.
+ */
+function services_client_process_mapping($src_data, $fields, $fields_empty = array()) {
+  $data_obj = new stdClass;
+
+  // Loop through the fields and assign the data
+  foreach($fields as $field) {
+    $field = trim($field);
+    if (!empty($field)) {
+      // Server is 0 and client is 1
+      list($server_name, $client_name) = explode('|', $field);
+      // Reset data
+      $data = NULL;
+
+      try {
+        // Map the client side object to its data
+        if ($client_name) {
+          $data = services_client_raw_data_get($client_name, $src_data);
+        }
+
+        // Map the server side object to its data
+        if ($server_name && (!empty($data) || $data === 0 || $data === "0" || $data === 0.00)) {
+          services_client_raw_data_set($server_name, $data_obj, $data);
+        }
+      }
+      catch (ServicesClientDataNotFoundException $e) {
+        // Default empty is specified
+        if (isset($fields_empty[$client_name])) {
+          $server_name = isset($fields_empty[$client_name]['destination']) ?
+            $fields_empty[$client_name]['destination'] :
+            $server_name;
+          services_client_raw_data_set($server_name, $data_obj, $fields_empty[$client_name]['value']);
+        }
+      }
+    }
+  }
+
+  return $data_obj;
+}
+
+/**
+ * Creates empty mapping of fields
+ *
+ * @param array $empty
+ *   List of empty fields
+ */
+function services_client_process_mapping_prepare_empty($empty) {
+  $output = array();
+
+  // Split textarea to rows
+  $rows = is_array($empty) ? $empty : explode("\n", trim($empty));
+
+  foreach ($rows as $row) {
+    $row = trim($row);
+    if (!empty($row)) {
+      // Get source field, (destination), default value
+      $data = explode("|", $row);
+
+      // source|destination|value or source|value
+      $output[$data[0]] = array(
+        'destination' => isset($data[2]) ? $data[1] : NULL,
+        'value' => isset($data[2]) ? $data[2] : $data[1],
+      );
+
+      if ($output[$data[0]]['value'] == "NULL") {
+        $output[$data[0]]['value'] = NULL;
+      }
+
+      if ($output[$data[0]]['value'] == "ARRAY") {
+        $output[$data[0]]['value'] = array();
+      }
+    }
+  }
+
+  return $output;
+}
+
+/**
+ * Retrieve data from source object by $path which can be entered in UI.
+ *
+ * @param string $path
+ *   Path should be in fomrat property#>index1#>index2#>value
+ * @param object $source
+ *   Source object
+ */
+function services_client_raw_data_get($path, $source) {
+  // Explode the segments by #
+  $parts = explode('#', trim($path));
+
+  // Create reference to initial data source
+  $data = $source;
+
+  foreach ($parts as $part) {
+    // Get correct name
+    if (substr($part, 0, 1) == '>') {
+      $name = substr($part, 1);
+      if (isset($data[$name])) {
+        $data = $data[$name];
+      }
+      else {
+        throw new ServicesClientDataNotFoundException();
+      }
+    }
+    else {
+      $name = $part;
+      if (isset($data->{$name})) {
+        $data = $data->{$name};
+      }
+      else {
+        throw new ServicesClientDataNotFoundException();
+      }
+    }
+  }
+
+  return $data;
+}
+
+/**
+ * Set data to destination object
+ *
+ * @param $path
+ * @param $destination
+ * @param $data
+ */
+function services_client_raw_data_set($path, &$destination, $set_data) {
+  // Explode the segments by #
+  $parts = explode('#', trim($path));
+
+  $data = &$destination;
+
+  foreach ($parts as $part) {
+    // Create array element
+    if (substr($part, 0, 1) == '>') {
+      $name = substr($part, 1);
+      if (!isset($data[$name])) {
+        $data[$name] = NULL;
+      }
+      $data = &$data[$name];
+    }
+    else {
+      $name = $part;
+      if (!isset($data->{$name})) {
+        $data->{$name} = NULL;
+      }
+      $data = &$data->{$name};
+    }
+  }
+
+  $data = $set_data;
+}
+
+
+/**
+ * Do node->type override mapping
+ *
+ * @param array $types
+ *    A list of type mappings separated by pipe.
+ * @param string $node_type
+ *    The node's current type.
+ * @return string
+ *    A new (or the same if no match was found) type for this node.
+ */
+function services_client_type_override($types, $node_type) {
+
+  // Set the assigned type to the existing
+  $assigned_type = $node_type;
+
+  // Loop through the type list.
+  foreach($types as $type) {
+
+    // Server is 0 and client is 1
+    $mpair = explode('|', $type);
+    $mname = trim($mpair[0]);
+    $cname = trim($mpair[1]);
+
+    // If we find an entry that matches the current node's type then we assign the master type to it.
+    if ($node_type == $cname) {
+      $assigned_type = $mname;
+      break; // there can only be one node type mapping per node, so we'll break out of this foreach;
+    }
+  }
+
+  // Return our assigned type. If we didn't get a match, it will be the original.
+  return $assigned_type;
+}
+
+/**
+ * Store data to queue for next processing.
+ *
+ * @param $src_data
+ *   Source data that would be sent to services module
+ * @param $type
+ *   Type of hook
+ */
+function services_client_queue_data($src_data, $type) {
+  if (isset($src_data->_services_client)) {
+    // If data should be processed in queue check if data haven't been queued
+    // already and are processed from queue. If not add custom mark 'queued' and
+    // send data to queue
+    if (variable_get('services_client_use_queue', TRUE) 
+      && empty($src_data->_services_client['queued'])
+      && empty($src_data->_services_client['bypass_queue'])) {
+      // Mark data as queued
+      $src_data->_services_client['queued'] = TRUE;
+
+      // Get queue
+      $queue = DrupalQueue::get('services_client_sync', TRUE);
+      // Enqueue data
+      return $queue->createItem(array(
+        'src_data' => $src_data,
+        'type' => $type
+      ));
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Sync queued data to other sites. Drupal will use this function as callback
+ * in cron run.
+ */
+function services_client_queue_sync($data) {
+  services_client_data_process($data['src_data'], $data['type']);
+}
+
+/**
+ * Create mapping of roles from remote site
+ *
+ * @param $account
+ *   User account
+ * @param $data
+ *   User object data
+ * @param $mapping
+ *   Mapping of remote roles
+ * @param $client
+ *   Connection client to remote site
+ * @param $conn_name
+ *   Name of the remote connection
+ */
+function services_client_process_roles_mapping($account, &$data, $mapping, &$client, $conn_name) {
+  // Build role mapping
+  $lines = explode("\n", trim($mapping));
+  $roles = array();
+  foreach ($lines as $line) {
+    if (!empty($line)) {
+      list($local, $remote) = explode("|", $line);
+      $roles[trim($local)] = trim($remote);
+    }
+  }
+
+  // If there is some mapping for roles
+  if (count($roles)) {
+    // Check if user has some role that needs to be mapped
+    if (count(array_intersect($account->roles, array_keys($roles)))) {
+      // Retrieve roles with role ids from remote site
+      $remote_roles = services_client_get_remote_roles($conn_name, $client);
+
+      // Prepare roles array that is going to be sent to remote site
+      $data->roles = (isset($data->roles) ? $data->roles : array());
+
+      // Map roles
+      foreach ($roles as $local_role => $remote_role) {
+        // Check if local account has local role and if remote role exists
+        if (in_array($local_role, $account->roles) && ($key = array_search($remote_role, $remote_roles))) {
+          // Add role to data
+          $data->roles[$key] = $remote_role;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Retrieve roles from remote site
+ *
+ * @param $conn
+ *   Connection definition
+ * @param $client
+ *   Client
+ */
+function services_client_get_remote_roles($conn, $client) {
+  $cid = 'services_client:remote_roles:' . $conn;
+  $roles = array();
+  if (($cache = cache_get($cid))) {
+    $roles = $cache->data;
+  }
+  else {
+    $roles = $client->action('user', 'list_roles');
+    // Cache data for 1 hour
+    cache_set($cid, $roles, 'cache', time() + 60 * 60);
+  }
+  return $roles;
+}
+
+/**
+ * Determine whether user can be synced.
+ *
+ * @param $account
+ *   User account
+ */
+function services_client_user_exclude($account) {
+  $exclude = explode(',', trim(variable_get('services_client_exclude_users', '1')));
+  return in_array($account->uid, $exclude);
+}
+
+/**
+ * Implements hook_mail().
+ */
+function services_client_mail($key, &$message, $params) {
+  if ($key == 'notify_errors') {
+    $message['subject'] = t('SC: Failed pushing resources: Errors: @errors, Site: @site', array(
+      '@errors' => count($params['errors']),
+      '@site' => variable_get('site_name', 'Drupal'),
+    ));
+    foreach ($params['errors'] as $error) {
+      $task = $error['task'];
+      if ($error['type'] == 'node') {
+        $node = $error['data'];
+        $row = array();
+        $row[] = 'Node: ' . $node->title . ' ' . url('node/' . $node->nid . '/edit', array('absolute' => TRUE));
+        $row[] = 'Task: ' . $task->title . ' conn: ' . $task->conn_name;
+
+        $message['body'][] = implode("\n", $row);
+      }
+      elseif ($error['type'] == 'user') {
+        $account = $error['data'];
+        $row = array();
+        $row[] = 'User: ' . $account->name . ' ' . url('user/' . $account->uid, array('absolute' => TRUE));
+        $row[] = 'Task: ' . $task->title . ' conn: ' . $task->conn_name;
+        
+        $message['body'][] = implode("\n", $row);
+      }
+    }
+  }
+}
+
+/**
+ * Process errors when syncing objects to remote sites
+ */
+function services_client_process_errors($errors = array()) {
+  // Send email notification
+  if (variable_get('services_client_notify', FALSE)) {
+    $recipients = explode("\n", variable_get('services_client_notify_recipients', ''));
+    foreach ($recipients as $mail) {
+      $mail = trim($mail);
+      if (valid_email_address($mail)) {
+        $params = array('errors' => $errors);
+        drupal_mail('services_client', 'notify_errors', $mail, language_default(), $params);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function services_client_form_alter(&$form, $form_state, $form_id) {
+  // Admin registers user
+  if (($form_id == 'user_register_form' || $form_id == 'user_profile_form') && user_access('administer users')) {
+    $form['_services_client_skip'] = array(
+      '#type' => 'checkbox',
+      '#title' => t("Don't send update by services client"),
+    );
+  }
+
+  if ($form_id == 'ctools_export_ui_edit_item_form') {
+    if ($form_state['plugin']['schema'] == 'services_client_connection') {
+      $form['services_client_id'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Remove client ID'),
+        '#default_value' => isset($form_state['item']->services_client_id) ? $form_state['item']->services_client_id : NULL,
+        '#description' => t('Enter ID of services client on remote endpoint.'),
+        '#size' => 50
+      );
+      $form['#submit'][] = 'services_client_form_submit_connection';
+    }
+  }
+}
+
+/**
+ * Get current site services client ID
+ *
+ * @return string
+ *   ID of current site.
+ */
+function services_client_get_id() {
+  return variable_get('services_client_id', drupal_get_token('services_client'));
+}
+
+/**
+ * Add customer services_client_id to connection
+ */
+function services_client_form_submit_connection($form, &$form_state) {
+  if (isset($form_state['values']['services_client_id']) && !empty($form_state['values']['services_client_id'])) {
+    $form_state['item']->services_client_id = $form_state['values']['services_client_id'];
+  }
+}
+
+/**
+ * Implements hook_services_client_connection_save().
+ */
+function services_client_services_client_connection_save($connection) {
+  if (!empty($connection->services_client_id)) {
+    db_merge('services_client_connection_id')
+      ->key(array('name' => $connection->name))
+      ->fields(array('services_client_id' => $connection->services_client_id))
+      ->execute();
+  }
+}
+
+/**
+ * Implements hook_services_client_connection_load().
+ */
+function services_client_services_client_connection_load($connection) {
+  if (($id = services_client_get_connection_id($connection->name))) {
+    $connection->services_client_id = $id;
+  }
+}
+
+/**
+ * Load remote services client id for connection
+ */
+function services_client_get_connection_id($name) {
+  $cache = &drupal_static(__FUNCTION__);
+
+  if (!isset($cache[$name])) {
+    $sql = "SELECT services_client_id FROM {services_client_connection_id} WHERE name = :name";
+    $cache[$name] = db_query($sql, array(
+      ':name' => $name,
+    ))->fetchField();
+  }
+
+  return isset($cache[$name]) ? $cache[$name] : NULL;
+}
+
+/**
+ * Determine whether module should skip syncing users
+ */
+function services_client_sync_exclude($object, $type) {
+  $hook = 'services_client_data_exclude';
+  foreach (module_implements($hook) as $module) {
+    $func = $module . '_' . $hook;
+    $result = $func($object, $type);
+    // If module is requesting skip we don't
+    if ($result === TRUE) {
+      return TRUE;
+    }
+  }
+}

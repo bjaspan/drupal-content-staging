@@ -1,0 +1,16 @@
+name = Services Client
+description = Client-side module for managing communications with a services REST server.
+package = "Services"
+core = 7.x
+
+files[] = services_client.admin.inc
+files[] = services_client.theme.inc
+files[] = include/exception.inc
+
+dependencies[] = services_client_connection
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

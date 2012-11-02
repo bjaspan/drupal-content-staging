@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid_comment module.
+ */
+
+// Include UUID schema helper functions.
+module_load_include('inc', 'uuid', 'uuid.schema');
+
+/**
+ * Implements hook_enable().
+ */
+function uuid_comment_enable() {
+
+
+  if (variable_get(UUID_UPGRADE_VAR, FALSE)) {
+    db_query('UPDATE {comment} c INNER JOIN {uuid_comments} cu ON c.cid = cu.cid'
+      . ' SET c.uuid = cu.uuid');
+
+    db_drop_table('uuid_comments');
+    variable_del('uuid_automatic_for_comments');
+  }
+
+  uuid_comment_uuid_sync();
+}
+
+/**
+ * Implements hook_schema_alter().
+ */
+function uuid_comment_schema_alter(&$schema) {
+  uuid_schema_generate($schema, 'comment');
+}
+
+/**
+ * Implements hook_install().
+ */
+function uuid_comment_install() {
+  $schema = array(
+    'comment' => array(),
+  );
+
+  uuid_comment_schema_alter($schema);
+
+  uuid_add_field($schema, 'comment');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function uuid_comment_uninstall() {
+  $schema = array(
+    'comment' => array(),
+  );
+
+  uuid_comment_schema_alter($schema);
+
+  uuid_drop_field($schema, 'comment');
+}

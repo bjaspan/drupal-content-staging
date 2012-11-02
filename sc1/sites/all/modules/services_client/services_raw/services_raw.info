@@ -1,0 +1,14 @@
+name = Services Raw
+description = Provides raw API access to create / udpate operations on certain Drupal objects
+package = "Services"
+core = 7.x
+dependencies[] = services
+
+files[] = services_raw.inc
+
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

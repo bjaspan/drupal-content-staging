@@ -1,0 +1,13 @@
+name = Services UUID
+description = Adds UUID resources to the services module.
+core = 7.x
+package = Services
+
+dependencies[] = services
+dependencies[] = uuid
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

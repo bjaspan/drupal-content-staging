@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid_taxonomy module.
+ */
+
+// Include UUID schema helper functions.
+module_load_include('inc', 'uuid', 'uuid.schema');
+
+/**
+ * Implements hook_enable().
+ */
+function uuid_taxonomy_enable() {
+
+
+  if (variable_get(UUID_UPGRADE_VAR, FALSE)) {
+    db_query('UPDATE {taxonomy_term_data} t INNER JOIN {uuid_term_data} tu ON t.uid = tu.uid'
+      . ' SET t.uuid = tu.uuid');
+
+    db_drop_table('uuid_term_data');
+    variable_del('uuid_automatic_for_taxonomy');
+  }
+
+  uuid_taxonomy_uuid_sync();
+}
+
+/**
+ * Implements hook_schema_alter().
+ */
+function uuid_taxonomy_schema_alter(&$schema) {
+  uuid_schema_generate($schema, 'taxonomy_term_data');
+}
+
+/**
+ * Implements hook_install().
+ */
+function uuid_taxonomy_install() {
+  $schema = array(
+    'taxonomy_term_data' => array(),
+  );
+
+  uuid_taxonomy_schema_alter($schema);
+
+  uuid_add_field($schema, 'taxonomy_term_data');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function uuid_taxonomy_uninstall() {
+  $schema = array(
+    'taxonomy_term_data' => array(),
+  );
+
+  uuid_taxonomy_schema_alter($schema);
+
+  uuid_drop_field($schema, 'taxonomy_term_data');
+}

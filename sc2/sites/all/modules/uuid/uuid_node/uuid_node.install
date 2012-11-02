@@ -1,0 +1,67 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid_node module.
+ */
+
+// Include UUID schema helper functions.
+module_load_include('inc', 'uuid', 'uuid.schema');
+
+/**
+ * Implements hook_enable().
+ */
+function uuid_node_enable() {
+  if (variable_get(UUID_UPGRADE_VAR, FALSE)) {
+    db_query('UPDATE {node} n INNER JOIN {uuid_node} un ON n.nid = un.nid'
+      . ' SET n.uuid = un.uuid');
+
+    db_query('UPDATE {node_revision} r'
+      . ' INNER JOIN {uuid_node_revisions} ur ON r.nid = ur.nid AND r.vid = ur.vid'
+      . ' SET r.vuuid = ur.uuid');
+
+    db_drop_table('uuid_node');
+    db_drop_table('uuid_node_revisions');
+    variable_del('uuid_automatic_for_nodes');
+  }
+
+  uuid_node_uuid_sync();
+}
+
+/**
+ * Implements hook_schema_alter().
+ */
+function uuid_node_schema_alter(&$schema) {
+  uuid_schema_generate($schema, 'node');
+  uuid_schema_generate($schema, 'node_revision', 'vuuid');
+}
+
+/**
+ * Implements hook_install().
+ */
+function uuid_node_install() {
+  $schema = array(
+    'node' => array(),
+    'node_revision' => array()
+  );
+
+  uuid_node_schema_alter($schema);
+
+  uuid_add_field($schema, 'node');
+  uuid_add_field($schema, 'node_revision');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function uuid_node_uninstall() {
+  $schema = array(
+    'node' => array(),
+    'node_revision' => array()
+  );
+
+  uuid_node_schema_alter($schema);
+
+  uuid_drop_field($schema, 'node_revision');
+  uuid_drop_field($schema, 'node');
+}

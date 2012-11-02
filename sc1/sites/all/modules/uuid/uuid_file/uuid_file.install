@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid_file module.
+ */
+
+// Include UUID schema helper functions.
+module_load_include('inc', 'uuid', 'uuid.schema');
+
+/**
+ * Implements hook_enable().
+ */
+function uuid_file_enable() {
+  uuid_file_uuid_sync();
+}
+
+/**
+ * Implements hook_schema_alter().
+ */
+function uuid_file_schema_alter(&$schema) {
+  uuid_schema_generate($schema, 'file_managed');
+}
+
+/**
+ * Implements hook_install().
+ */
+function uuid_file_install() {
+  $schema = array(
+    'file_managed' => array(),
+  );
+
+  uuid_file_schema_alter($schema);
+
+  uuid_add_field($schema, 'file_managed');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function uuid_file_uninstall() {
+  $schema = array(
+    'file_managed' => array(),
+  );
+
+  uuid_file_schema_alter($schema);
+
+  uuid_drop_field($schema, 'file_managed');
+}

@@ -1,0 +1,37 @@
+<?php
+
+module_load_include('inc', 'uuid');
+
+/**
+ * Implements hook_comment_presave().
+ */
+function uuid_comment_comment_presave($comment) {
+  // We generate the UUID here so it can be used by other hooks.
+  if (empty($comment->uuid)) {
+    $comment->uuid = uuid_uuid();
+  }
+}
+
+/**
+ * Searches for a comment by its UUID.
+ */
+function uuid_comment_find($uuid) {
+  return uuid_find($uuid, 'comment', 'cid');
+}
+
+/**
+ * Ensures all comments have a UUID.
+ */
+function uuid_comment_uuid_sync() {
+  uuid_sync('comment', 'cid');
+}
+
+
+/**
+ * Implements hook_views_api().
+ */
+function uuid_comment_views_api() {
+  return array(
+    'api' => 2, 
+  );
+}

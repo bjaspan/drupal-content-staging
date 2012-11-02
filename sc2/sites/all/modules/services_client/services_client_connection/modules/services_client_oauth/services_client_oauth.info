@@ -1,0 +1,17 @@
+name = Services Client Connection OAuth
+description = Provides OAuth authentication plugin for Serivces Client Connection
+package = "Services"
+core = 7.x
+
+dependencies[] = ctools
+dependencies[] = services_client_connection
+dependencies[] = oauth_common
+
+files[] = plugins/ServicesClientDrupalOAuthClient.inc
+files[] = plugins/ServicesClientOAuthRequest.inc
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

@@ -1,0 +1,33 @@
+<?php
+
+/**
+ * Implements hook_uuid_info().
+ */
+function uuid_ossp_uuid_info() {
+  $sources = array();
+
+  if (function_exists('uuid_make')) {
+    $sources['ossp'] = array(
+      'callback' => 'uuid_ossp_generate',
+      'title' => t('OSSP Extension'),
+      'include' => array('module' => 'uuid_ossp', 'filename' => 'uuid_ossp.module'),
+    );
+  }
+  return $sources;
+}
+
+/**
+ * Generates a UUID using the (somewhat broken) OSSP PHP extension.
+ *
+ * See http://www.ossp.org/pkg/lib/uuid/
+ */
+function uuid_ossp() {
+  $v4 = NULL;
+  $out = '';
+
+  uuid_create(&$v4);
+  uuid_make($v4, UUID_MAKE_V4);
+  uuid_export($v4, UUID_FMT_STR, &$out);
+
+  return $out;
+}

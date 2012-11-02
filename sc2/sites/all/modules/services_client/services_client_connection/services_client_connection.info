@@ -1,0 +1,18 @@
+name = Services Client Connection
+description = Allows you to define connections to remote Drupal sites with services modules
+package = "Services"
+core = 7.x
+dependencies[] = ctools
+
+files[] = include/plugin.inc
+files[] = include/connection.inc
+files[] = include/exception.inc
+files[] = include/http.inc
+
+configure = admin/structure/services_client/connection
+; Information added by drupal.org packaging script on 2012-10-27
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "services_client"
+datestamp = "1351301501"
+

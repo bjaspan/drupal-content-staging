@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the uuid_role module.
+ */
+
+// Include UUID schema helper functions.
+module_load_include('inc', 'uuid', 'uuid.schema');
+
+/**
+ * Implements hook_enable().
+ */
+function uuid_role_enable() {
+  uuid_role_uuid_sync();
+}
+
+/**
+ * Implements hook_schema_alter().
+ */
+function uuid_role_schema_alter(&$schema) {
+  uuid_schema_generate($schema, 'role');
+}
+
+/**
+ * Implements hook_install().
+ */
+function uuid_role_install() {
+  $schema = array(
+    'role' => array(),
+  );
+
+  uuid_role_schema_alter($schema);
+
+  uuid_add_field($schema, 'role');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function uuid_role_uninstall() {
+  $schema = array(
+    'role' => array(),
+  );
+
+  uuid_role_schema_alter($schema);
+
+  uuid_drop_field($schema, 'role');
+}

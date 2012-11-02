@@ -1,0 +1,62 @@
+<?php
+
+module_load_include('inc', 'uuid');
+
+/**
+ * Implements hook_node_presave().
+ */
+function uuid_node_node_presave($node) {
+  if (empty($node->uuid)) {
+    $node->uuid = uuid_uuid();
+  }
+
+  if (1 == $node->revision) {
+    $node->vuuid = uuid_uuid();
+  }
+
+  if (empty($node->vuuid)) {
+    $node->vuuid = uuid_uuid();
+  }
+}
+
+/**
+ * Searches for a node by its UUID.
+ *
+ * @return
+ *   The node id if found or FALSE if not found.
+ */
+function uuid_node_find($uuid) {
+  return uuid_find($uuid, 'node', 'nid');
+}
+
+/**
+ * Find a node revision by its UUID.
+ *
+ * @return
+ *   FALSE if not found or array with nid and vid as keys.
+ */
+function uuid_node_revision_find($uuid) {
+  return db_select('node_revision', 'r')
+    ->fields('r', array('vid', 'nid'))
+    ->condition('vuuid', $uuid, '=')
+    ->execute()
+    ->fetchAssoc();
+}
+
+/**
+ * Ensures all nodes and revisions have UUIDs.
+ */
+function uuid_node_uuid_sync() {
+  uuid_sync('node', 'nid');
+  uuid_sync('node_revision', 'vid', 'vuuid');
+}
+
+
+/**
+ * Implements hook_views_api().
+ */
+function uuid_node_views_api() {
+  return array(
+    'api' => 2, 
+  );
+}

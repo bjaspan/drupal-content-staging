@@ -1,0 +1,35 @@
+<?php
+
+module_load_include('inc', 'uuid');
+
+/**
+ * Implements hook_user_presave().
+ */
+function uuid_user_user_presave(&$edit, $account, $category) {
+  if (empty($account->uuid) && empty($edit['uuid'])) {
+    $edit['uuid'] = uuid_uuid();
+  }
+}
+
+/**
+ * Finds a user by their UUID.
+ */
+function uuid_user_find($uuid) {
+  return uuid_find($uuid, 'users', 'uid');
+}
+
+/**
+ * Ensures all users have a UUID.
+ */
+function uuid_user_uuid_sync() {
+  uuid_sync('users', 'uid');
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function uuid_user_views_api() {
+  return array(
+    'api' => 2, 
+  );
+}

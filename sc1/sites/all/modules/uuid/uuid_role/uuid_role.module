@@ -1,0 +1,65 @@
+<?php
+
+module_load_include('inc', 'uuid');
+
+/**
+ * Add a UUID to a user role.
+ *
+ * @param
+ *  $role the user role to add the UUID to.
+ *
+ * @return
+ *   1 if already set or the number of rows affected - should always be 1.
+ */
+function uuid_role_add_uuid($role) {
+  if (!empty($role->uuid)) {
+    return 1;
+  }
+
+  return db_update('role')
+    ->fields(array('uuid' => uuid_uuid()))
+    ->condition('rid', $role->rid)
+    ->execute();
+}
+
+/**
+ * Implements hook_user_role_insert().
+ */
+function uuid_role_user_role_insert($role) {
+  uuid_role_add_uuid($role);
+}
+
+
+/**
+ * Implements hook_user_role_update().
+ */
+function uuid_role_user_role_update($role) {
+  uuid_role_add_uuid($role);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function uuid_role_form_user_admin_role_alter(&$form, &$form_state, $form_id) {
+  // Preserve the existing UUID if we have one
+  if (isset($form_state['build_info']['args'][0]->uuid)) {
+    $form['uuid'] = array(
+      '#type' => 'value',
+      '#value' => $form_state['build_info']['args'][0]->uuid,
+    );
+  }
+}
+
+/**
+ * Finds a role by its UUID.
+ */
+function uuid_role_find($uuid) {
+  return uuid_find($uuid, 'role', 'rid');
+}
+
+/**
+ * Ensures all roles have a UUID.
+ */
+function uuid_role_uuid_sync() {
+  uuid_sync('role', 'rid');
+}

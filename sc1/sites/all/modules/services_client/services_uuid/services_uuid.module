@@ -1,0 +1,197 @@
+<?php
+
+/**
+ * Implementation of hook_services_resources()
+ * Defines the UUID resource fo the services module
+ *
+ * @return array
+ */
+function services_uuid_services_resources() {
+  $uuid_resource = array(
+    'uuid' => array(
+      'retrieve' => array(
+        'callback' => '_services_uuid_resource_retrieve',
+        'help'   => t('Get the nid for a given UUID.'),
+        'args' => array(
+          array(
+            'name' => 'type',
+            'optional' => FALSE,
+            'source' => array('path' => 0),
+            'type' => 'string',
+            'description' => 'The data type for which to retrieve the UUID',
+          ),
+          array(
+            'name' => 'uuid',
+            'optional' => FALSE,
+            'source' => array('param' => 'uuid'),
+            'type' => 'string',
+            'description' => 'The uuid for which to get the object id (nid, uid, etc...)',
+          ),
+        ),
+        'access callback' => '_services_uuid_resource_access',
+        'access arguments' => array('view'),
+        'access arguments append' => TRUE,
+      ),
+      'update' => array(
+        'callback' => '_services_uuid_resource_update',
+        'args' => array(
+          array(
+            'name' => 'type',
+            'optional' => FALSE,
+            'source' => array('path' => 0),
+            'type' => 'string',
+            'description' => 'The data type for which to retrieve the UUID',
+          ),
+          array(
+            'name' => 'uuid',
+            'optional' => FALSE,
+            'source' => array('data' => 'uuid'),
+            'type' => 'string',
+            'description' => 'The uuid for which to get the object id (nid, uid, etc...)',
+          ),
+          array(
+            'name' => 'id',
+            'optional' => FALSE,
+            'source' => array('data' => 'id'),
+            'type' => 'string',
+            'description' => 'Resource ID',
+          ),
+        ),
+        'access callback' => '_services_uuid_resource_access',
+        'access arguments' => array('update'),
+        'access arguments append' => TRUE,
+      ),
+    ),
+  );
+  return $uuid_resource;
+}
+
+/**
+ * Function to handle actual retrieval of the xID for the UUID
+ *
+ * @param $type
+ * @param $uuid
+ * @return int
+ */
+function _services_uuid_resource_retrieve($type, $uuid) {
+  switch($type) {
+    case 'node':
+      $nid = uuid_node_find($uuid);
+      return $nid;
+    case 'user':
+      $uid = uuid_user_find($uuid);
+      return $uid;
+    case 'taxonomy':
+      $tid = uuid_taxonomy_term_find($uuid);
+      return $tid;
+    case 'role':
+      $rid = uuid_role_find($uuid);
+      return $rid;
+    case 'comment':
+      $cid = uuid_comment_find($uuid);
+      return $cid;
+    case 'file':
+      $fid = uuid_file_find($uuid);
+      return $fid;
+    default:
+      return services_error(t('Unsupported UUID resource %type type.', array('%type' => $type)), 406);
+  }
+}
+
+/**
+ * Function to handle actual retrieval of the xID for the UUID
+ *
+ * @param $type
+ * @param $uuid
+ * @return int
+ */
+function _services_uuid_resource_update($type, $uuid, $id) {
+  switch($type) {
+    case 'node':
+      $node = node_load($id);
+      $node->uuid = $uuid;
+      return node_save($node);
+    case 'user':
+      $account = user_load($id);
+      $account->uuid = $uuid;
+      return user_save($account, array('uuid' => $uuid));
+    case 'taxonomy':
+    case 'role':
+    case 'comment':
+    case 'file':
+    default:
+      return services_error(t('Unsupported UUID resource %type type.', array('%type' => $type)), 406);
+  }
+}
+
+/**
+ * Access callback to handle permissions for retrieving UUIDs
+ *
+ * @param string $op
+ * @param array $args
+ * @return boolean
+ */
+function _services_uuid_resource_access($op = 'view', $args = array()) {
+  if ($op == 'view') {
+    switch($args[0]) {
+      case 'node':
+        $nid = _services_uuid_resource_retrieve($args[0], $args[1]);
+        if ($nid) {
+          $node = node_load($nid);
+          return node_access('view', $node);
+        }
+        else {
+          return TRUE;
+        }
+        break;
+      case 'user':
+        module_load_include('inc', 'services', 'resources/user_resource');
+        $uid = _services_uuid_resource_retrieve($args[0], $args[1]);
+        if ($uid) {
+          return _user_resource_access('view', array($uid));
+        }
+        else {
+          return TRUE;
+        }
+      case 'taxonomy':
+        return user_access('access content');
+      case 'comment':
+        user_access('access comments');
+      case 'file':
+        module_load_include('inc', 'services', 'resources/file_resource');
+        $fid = _services_uuid_resource_retrieve($args[0], $args[1]);
+        return _file_resource_access('view', array($fid));
+    }
+  }
+
+  if ($op == 'update') {
+    $type = $args[0];
+    $uuid = $args[1];
+    $id = $args[2];
+
+    switch ($type) {
+      case 'node':
+        if ($id) {
+          $node = node_load($id);
+          return node_access('update', $node);
+        }
+        else {
+          return TRUE;
+        }
+        break;
+      case 'user':
+        module_load_include('inc', 'services', 'resources/user_resource');
+        return _user_resource_access('update', array($id));
+      case 'taxonomy':
+        return user_access('access content');
+        break;
+      case 'comment':
+        user_access('access comments');
+        break;
+      case 'file':
+        module_load_include('inc', 'services', 'resources/file_resource');
+        return _file_resource_access('view', array($id));
+        break;
+    }
+  }
+}
