@@ -81,8 +81,6 @@ pushing to Staging, Production, identifying the various modules.
 
 # Use case: Hub-and-spoke federated content
 
-DIAGRAM: CCI
-
 * Multiple rim sites
   * Content creation and editing, often programmatically
   * Pushes changes to central hub site
@@ -93,3 +91,4 @@ DIAGRAM: CCI
   * All updates stored as revisions
   * Distributes changes to rim sites
 
+![Services Client hub-and-spoke model in production use at Acquia](./CCI.png)
