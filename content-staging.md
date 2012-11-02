@@ -91,4 +91,4 @@ pushing to Staging, Production, identifying the various modules.
   * All updates stored as revisions
   * Distributes changes to rim sites
 
-![Services Client hub-and-spoke model in production use at Acquia](./CCI.png)
+![Services Client hub-and-spoke model in production use at Acquia](CCI.png)
