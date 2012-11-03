@@ -5,6 +5,8 @@ Client module, plus a pair of sample Drupal sites (code and database)
 configured using the Services Client module for two-way content
 sharing.
 
+The presentation slides are available in PDF format. Video is forthcoming.
+
 This presentation was first given at BADcamp 2012: 
 http://2012.badcamp.net/program/sessions/content-staging-drupal-actually-works-finally
 
