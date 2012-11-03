@@ -4,6 +4,19 @@
 
 			     BADCAMP 2012
 
+# The Question
+
+"How can I migrate content from one Drupal site to another?"
+
+# The Caveats
+
+* Bad news
+  * Not plug-and-play ready
+  * Documentation and UX need work
+* Good news
+  * In production at Acquia
+  * Demo setup is in GitHub
+
 # Architecture
 
 * Content source site
@@ -13,12 +26,12 @@
 
 * Content sink site
   * Receives new or updated content from source
+  * Store all updates as revisions
 
 * Content sinks can also be sources
   * Allows N-way distribution
   * Detects and prevents loops
   * Conflicts are possible!
-    * Store all updates as revisions
 
 # Implementation
 
@@ -32,7 +45,7 @@
 * Services Raw module
   * Exposes object-based APIs for nodes and other types
 
-* Serivices UUID module
+* Services UUID module
   * Exposes UUID APIs via Services
 
 * Services Client, Services Client Connection modules
@@ -91,4 +104,4 @@ pushing to Staging, Production, identifying the various modules.
   * All updates stored as revisions
   * Distributes changes to rim sites
 
-![Services Client hub-and-spoke model in production use at Acquia](https://raw.github.com/bjaspan/drupal-content-staging/master/CCI.png)
+![Services Client hub-and-spoke model in production use at Acquia](https://raw.github.com/bjaspan/drupal-content-staging/master/CCI.png "Services Client hub-and-spoke model in production use at Acquia")
